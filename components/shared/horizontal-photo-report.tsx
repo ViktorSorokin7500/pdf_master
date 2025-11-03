@@ -1,7 +1,22 @@
 "use client";
 import { useState } from "react";
 import { useDropzone } from "react-dropzone";
-import imageCompression from "browser-image-compression";
+
+import {
+  useImagePipeline,
+  createJsPdfPortraitA4,
+  captureNodeToJpeg,
+  addFullPageImage,
+  LAYOUT_HORIZONTAL,
+  yieldToBrowser,
+  makePager,
+  Photo,
+  SortablePhoto,
+  ReportPreview,
+} from "@/features/reports/shared";
+
+import { useObjectUrlRegistry } from "@/hooks/useObjectUrlRegistry";
+
 import {
   DndContext,
   closestCenter,
@@ -9,206 +24,8 @@ import {
   DragOverlay,
   DragStartEvent,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable, arrayMove } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
+import { SortableContext, arrayMove } from "@dnd-kit/sortable";
 import { restrictToWindowEdges } from "@dnd-kit/modifiers";
-import { RotateCwSquare, Trash2 } from "lucide-react";
-import { useObjectUrlRegistry } from "@/hooks/useObjectUrlRegistry";
-// Інтерфейс фотографії
-interface Photo {
-  id: string;
-  file: File;
-  preview: string;
-  caption: string;
-  rotation: number;
-}
-
-// Компонент для сортування фотографій
-const SortablePhoto = ({
-  photo,
-  index,
-  updateCaption,
-  deletePhoto,
-  isDragging,
-  rotatePhoto,
-}: {
-  photo: Photo;
-  index: number;
-  updateCaption: (id: string, caption: string) => void;
-  deletePhoto: (id: string) => void;
-  isDragging: boolean;
-  rotatePhoto: (id: string, angle: number) => void;
-}) => {
-  const { attributes, listeners, setNodeRef, transform, transition } =
-    useSortable({ id: photo.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={`relative text-center border border-gray-300 p-[5px] cursor-grab bg-white
-              shadow-[0_2px_4px_rgba(0,0,0,0.1)] touch-none
-              transition-[box-shadow,transform] duration-300 ease-in-out
-              hover:-translate-y-0,5 hover:shadow-[0_4px_8px_rgba(0,0,0,0.15)]
-              ${isDragging ? "opacity-50" : ""}`}
-      style={style}
-      {...attributes}
-    >
-      <img
-        src={photo.preview}
-        alt="Фотографія"
-        style={{ transform: `rotate(${photo.rotation}deg)` }}
-        className="max-w-full max-h-[150px] object-contain"
-        {...listeners}
-      />
-      <div
-        className="absolute top-1 left-1 bg-[rgba(0,0,0,0.5)] text-white
-               px-1 py-0.5 text-xs"
-      >
-        {index + 1}
-      </div>
-      <button
-        className="absolute top-1 right-1 bg-transparent border-0 rounded-full p-1
-               cursor-pointer flex items-center justify-center
-               transition-colors duration-300 ease-in-out
-               hover:bg-white"
-        onClick={(e) => {
-          e.stopPropagation();
-          deletePhoto(photo.id);
-        }}
-        title="Видалити"
-      >
-        <Trash2 size={20} className="text-red-500" />
-      </button>
-      <div>
-        <input
-          type="text"
-          value={photo.caption}
-          onChange={(e) => updateCaption(photo.id, e.target.value)}
-          placeholder="Введіть підпис"
-          className="absolute bottom-2.5 left-2.5 w-[calc(100%-48px)]
-         p-1 text-xs rounded outline-none
-         bg-transparent border border-transparent
-         text-white placeholder:text-gray-600
-         focus:bg-black focus:border-[#1a2a44] focus:placeholder:text-gray-200"
-          onClick={(e) => e.stopPropagation()}
-          maxLength={50}
-        />
-      </div>
-      <button
-        className="absolute bottom-4 right-2.5 bg-none border-0 text-[#000080] cursor-pointer mx-1 transition-colors duration-200 hover:text-[#1a2a44]"
-        onClick={(e) => {
-          e.stopPropagation();
-          rotatePhoto(photo.id, 180);
-        }}
-        title="Повернути вправо"
-      >
-        <RotateCwSquare size={16} />
-      </button>
-    </div>
-  );
-};
-
-// Компонент для попереднього перегляду PDF
-const PdfPreview = ({ photos, title }: { photos: Photo[]; title: string }) => {
-  const photosPerPage = 8; // Сітка 2x4
-  const pages = Math.ceil(photos.length / photosPerPage);
-
-  const pageWidth = 1200;
-  const pageHeight = 1600;
-  const leftPadding = 110;
-  const rightPadding = 20;
-  const topPadding = 10;
-  const bottomPadding = 10;
-  const gap = 10;
-  const photoWidth = (pageWidth - leftPadding - rightPadding - gap) / 2; // ≈ 529.5 px
-  const photoHeight = photoWidth * (481 / 854); // ≈ 298.72 px
-  const captionHeight = 25; // Для шрифту
-  const captionGap = 5; // Відступ між підписом і фото
-  const totalHeight =
-    4 * (photoHeight + captionHeight + captionGap) +
-    3 * gap +
-    topPadding +
-    bottomPadding +
-    180;
-  const scale = totalHeight > pageHeight ? pageHeight / totalHeight : 1;
-  const scaledPhotoWidth = photoWidth * scale;
-  const scaledPhotoHeight = photoHeight * scale;
-  const scaledCaptionHeight = captionHeight * scale;
-  const scaledCaptionGap = captionGap * scale;
-
-  return (
-    <div className="fixed top-0 left-[-10000px]">
-      {Array.from({ length: pages }).map((_, pageIndex) => (
-        <div
-          key={pageIndex}
-          id={`pdf-page-${pageIndex}`}
-          className="bg-white box-border"
-          style={{
-            width: `${pageWidth}px`,
-            height: `${pageHeight}px`,
-            padding: `${topPadding}px ${rightPadding}px ${bottomPadding}px ${leftPadding}px`,
-          }}
-        >
-          <div className="text-4xl font-bold text-black text-left mt-20">
-            {title || "Об'єкт оцінки"}
-          </div>
-          <div
-            className="grid justify-center content-center"
-            style={{
-              gridTemplateColumns: `repeat(2, ${scaledPhotoWidth}px)`,
-              gridTemplateRows: `repeat(4, ${
-                scaledPhotoHeight + scaledCaptionHeight + scaledCaptionGap
-              }px)`,
-              gap: `${gap}px`,
-              width: `${pageWidth - leftPadding - rightPadding}px`,
-              height: `${pageHeight - topPadding - bottomPadding - 180}px`,
-            }}
-          >
-            {photos
-              .slice(pageIndex * photosPerPage, (pageIndex + 1) * photosPerPage)
-              .map((photo, i) => (
-                <div
-                  key={photo.id}
-                  className="relative flex flex-col"
-                  style={{
-                    width: `${scaledPhotoWidth}px`,
-                    height: `${
-                      scaledPhotoHeight + scaledCaptionHeight + scaledCaptionGap
-                    }px`,
-                  }}
-                >
-                  <div
-                    className="text-xs leading-[1.2] text-[#1a2a44]
-                           bg-[rgba(255,255,255,0.8)] py-0.5 px-1 max-w-full
-                           whitespace-normal wrap-break-word mb-1"
-                  >
-                    {photo.caption ||
-                      `Фотографія №${i + 1 + pageIndex * photosPerPage}`}
-                  </div>
-                  <img
-                    src={photo.preview}
-                    alt="Фотографія"
-                    className="w-full object-contain m-auto"
-                    style={{
-                      height: `${scaledPhotoHeight}px`,
-                      transform: `rotate(${photo.rotation}deg)`,
-                    }}
-                  />
-                </div>
-              ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
 
 // Основний компонент сторінки
 export function HorizontalPhotoReport() {
@@ -216,59 +33,60 @@ export function HorizontalPhotoReport() {
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [title, setTitle] = useState<string>("Об'єкт оцінки");
-  const { register, revoke, revokeAll } = useObjectUrlRegistry(); // -- Додано --
+  const { register, revoke, revokeAll } = useObjectUrlRegistry();
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<number | null>(null);
 
-  const updateTitle = (newTitle: string) => {
-    setTitle(newTitle);
-  };
+  const updateTitle = (newTitle: string) => setTitle(newTitle);
   // Стандартизація зображення до 854x481
   const standardizeImage = async (file: File): Promise<File> => {
-    const img = new Image();
-    const objectUrl = register(URL.createObjectURL(file));
-    await new Promise((resolve) => {
-      img.onload = resolve;
-      img.src = objectUrl;
-    });
-    URL.revokeObjectURL(objectUrl);
+    const tempUrl = URL.createObjectURL(file);
+    try {
+      const img = new Image();
 
-    // const targetRatio = 854 / 481;
-    const targetWidth = 854;
-    const targetHeight = 481;
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = tempUrl;
+      });
 
-    // const currentRatio = img.width / img.height;
-    // let sourceWidth = img.width;
-    // let sourceHeight = img.height;
-    // let sourceX = 0;
-    // let sourceY = 0;
+      const targetWidth = 854;
+      const targetHeight = 481;
 
-    // if (currentRatio > targetRatio) {
-    //   sourceWidth = img.height * targetRatio;
-    //   sourceX = (img.width - sourceWidth) / 2;
-    // } else if (currentRatio < targetRatio) {
-    //   sourceHeight = img.width / targetRatio;
-    //   sourceY = (img.height - sourceHeight) / 2;
-    // }
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext("2d")!;
+      if (img.width < img.height) {
+        ctx.translate(0, targetHeight);
+        ctx.rotate(-Math.PI / 2);
 
-    const canvas = document.createElement("canvas");
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
-    const ctx = canvas.getContext("2d")!;
-    if (img.width < img.height) {
-      ctx.translate(0, targetHeight);
-      ctx.rotate(-Math.PI / 2);
+        ctx.drawImage(img, 0, 0, targetHeight, targetWidth);
+      } else {
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+      }
 
-      ctx.drawImage(img, 0, 0, targetHeight, targetWidth);
-    } else {
-      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+      const blob = await new Promise<Blob>((resolve) =>
+        canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.9)
+      );
+
+      return new File([blob], file.name, { type: "image/jpeg" });
+    } finally {
+      URL.revokeObjectURL(tempUrl);
     }
-
-    const blob = await new Promise<Blob>((resolve) =>
-      canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.9)
-    );
-
-    URL.revokeObjectURL(objectUrl);
-    return new File([blob], file.name, { type: "image/jpeg" });
   };
+
+  const { importImages } = useImagePipeline({
+    register,
+    setPhotos,
+    setIsImporting,
+    setImportProgress,
+    currentCount: photos.length,
+    maxCount: 100,
+    standardizeImage,
+  });
 
   const rotatePhoto = (id: string, angle: number) => {
     setPhotos((photos) =>
@@ -286,37 +104,8 @@ export function HorizontalPhotoReport() {
       setError("Максимум 100 фотографій");
       return;
     }
-
     setError(null);
-    const compressedPhotos = await Promise.all(
-      acceptedFiles.map(async (file) => {
-        try {
-          const compressedFile = await imageCompression(file, {
-            maxSizeMB: 1,
-            maxWidthOrHeight: 1920,
-            useWebWorker: true,
-          });
-
-          const standardizedFile = await standardizeImage(compressedFile);
-
-          return {
-            id: `${Date.now()}-${Math.random()}`,
-            file: standardizedFile,
-            preview: register(URL.createObjectURL(standardizedFile)),
-            caption: "",
-            rotation: 0,
-          };
-        } catch (err) {
-          console.error("Помилка обробки:", err);
-          return null;
-        }
-      })
-    );
-
-    const validPhotos = compressedPhotos.filter(
-      (photo) => photo !== null
-    ) as Photo[];
-    setPhotos([...photos, ...validPhotos]);
+    await importImages(acceptedFiles);
   };
 
   // Оновлення підпису
@@ -358,54 +147,54 @@ export function HorizontalPhotoReport() {
     });
   };
 
-  // Генерація PDF
   const generatePDF = async () => {
+    if (isGenerating) return;
     if (photos.length === 0) {
       setError("Немає фотографій для експорту");
       return;
     }
 
-    const pdf = new jsPDF({
-      orientation: "portrait", // як у тебе було
-      unit: "px",
-      format: "a4",
-    });
+    setIsGenerating(true);
+    setProgress(0);
+    try {
+      const pdf = createJsPdfPortraitA4();
 
-    const photosPerPage = 8;
-    const pages = Math.ceil(photos.length / photosPerPage);
+      const photosPerPage = LAYOUT_HORIZONTAL.PHOTOS_PER_PAGE;
+      const { total, pages } = makePager(photos, photosPerPage);
 
-    for (let pageIndex = 0; pageIndex < pages; pageIndex++) {
-      const pageElement = document.getElementById(`pdf-page-${pageIndex}`);
-      if (!pageElement) {
-        console.error(`Сторінка ${pageIndex} не знайдена`);
-        continue;
+      for (let i = 0; i < total; i++) {
+        const { id: pageId } = pages[i];
+        const pageElement = document.getElementById(
+          pageId
+        ) as HTMLElement | null;
+
+        if (!pageElement) {
+          console.error(`Сторінка ${i} не знайдена`);
+          continue;
+        }
+
+        setProgress(Math.round((i / total) * 100));
+        await yieldToBrowser();
+
+        const imgData = await captureNodeToJpeg(pageElement);
+        const { width, height } = LAYOUT_HORIZONTAL.PDF_IMG;
+
+        if (i > 0) pdf.addPage();
+        addFullPageImage(pdf, imgData, { width, height });
+        setProgress(Math.round(((i + 1) / total) * 100));
+        await yieldToBrowser();
       }
 
-      // -- Виправлення: піднімаємо ТІЛЬКИ scale, більше нічого --
-      const canvas = await html2canvas(pageElement, {
-        scale: Math.min(Math.max(window.devicePixelRatio || 1, 2), 3), // 2..3
-        useCORS: true,
-        backgroundColor: "#fff",
-        imageTimeout: 0,
-        removeContainer: true,
-        // НІЯКИХ width/height/windowWidth/windowHeight!
-      });
-
-      const imgData = canvas.toDataURL("image/jpeg", 0.92);
-
-      // -- ВАЖЛИВО: залишаємо твої константи розміру зображення на сторінці PDF --
-      const imgWidth = 440; // як було
-      const imgHeight = 625; // як було
-
-      if (pageIndex > 0) {
-        pdf.addPage();
-      }
-
-      // Кладемо рівно 440×625, як у твоєму першому варіанті → пропорції не зміняться
-      pdf.addImage(imgData, "JPEG", 0, 0, imgWidth, imgHeight);
+      setProgress(100);
+      await yieldToBrowser();
+      pdf.save("photo-report.pdf");
+    } catch (e) {
+      console.error(e);
+      setError("Сталася помилка під час генерації PDF");
+    } finally {
+      setIsGenerating(false);
+      setProgress(null);
     }
-
-    pdf.save("photo-report.pdf");
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -415,6 +204,8 @@ export function HorizontalPhotoReport() {
   });
 
   const activePhoto = photos.find((photo) => photo.id === activeId);
+
+  const hasUnready = photos.some((p) => p.status !== "ready");
 
   return (
     <div className="p-5 max-w-6xl m-auto">
@@ -429,11 +220,28 @@ export function HorizontalPhotoReport() {
           maxLength={100}
         />
       </div>
+      {isImporting && (
+        <div className="w-full max-w-[400px] mx-auto mt-2" aria-live="polite">
+          <div className="h-2 bg-gray-200 rounded">
+            <div
+              className="h-2 bg-[#1a2a44] rounded"
+              style={{
+                width: `${importProgress ?? 0}%`,
+                transition: "width 150ms linear",
+              }}
+            />
+          </div>
+          <div className="text-xs text-gray-600 mt-1 text-center">
+            Імпорт фото… {importProgress ?? 0}%
+          </div>
+        </div>
+      )}
       <div
         {...getRootProps()}
         className={`border-dashed border-2 border-[#1a2a44] rounded-lg p-5 text-center cursor-pointer ${
           isDragActive ? "bg-gray-200" : ""
-        }`}
+        }
+    ${isImporting ? "opacity-60 pointer-events-none" : ""}`}
       >
         <input {...getInputProps()} />
         <p>
@@ -448,7 +256,7 @@ export function HorizontalPhotoReport() {
         modifiers={[restrictToWindowEdges]}
       >
         <SortableContext items={photos.map((photo) => photo.id)}>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-[15px] mt-5 max-w-full overflow-x-hidden relative">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(215px,1fr))] gap-4 mt-5 max-w-full overflow-x-hidden relative">
             {photos.map((photo, index) => (
               <SortablePhoto
                 key={photo.id}
@@ -488,23 +296,69 @@ export function HorizontalPhotoReport() {
           )}
         </DragOverlay>
       </DndContext>
+      {isGenerating && (
+        <div className="w-full max-w-[400px] mx-auto mt-2" aria-live="polite">
+          <div className="h-2 bg-gray-200 rounded">
+            <div
+              className="h-2 bg-[#1a2a44] rounded"
+              style={{
+                width: `${progress ?? 0}%`,
+                transition: "width 200ms linear",
+              }}
+            />
+          </div>
+        </div>
+      )}
       {photos.length > 0 && (
         <div className="flex justify-center gap-2.5 my-5 mx-auto">
           <button
             onClick={generatePDF}
-            className="px-5 py-2.5 bg-[#1a2a44] text-white border-none rounded text-sm cursor-pointer transition-colors duration-300 ease-in-out hover:bg-[#0e1a2f]"
+            disabled={isGenerating || isImporting || hasUnready}
+            aria-busy={isGenerating}
+            className={`cursor-pointer px-5 py-2.5 rounded text-sm transition-colors duration-300 ease-in-out
+        ${
+          isGenerating
+            ? "bg-gray-400 cursor-not-allowed text-white"
+            : "bg-[#1a2a44] hover:bg-[#0e1a2f] text-white"
+        }`}
           >
-            Створити PDF
+            {isGenerating
+              ? progress !== null
+                ? `Генерація… ${progress}%`
+                : "Генерація…"
+              : "Створити PDF"}
           </button>
+
           <button
             onClick={cleanAll}
-            className="py-2.5 px-5 bg-red-500 text-white border-0 rounded text-base cursor-pointer transition-colors duration-300 ease-in-out hover:bg-red-600"
+            disabled={isGenerating || isImporting}
+            className={`cursor-pointer py-2.5 px-5 text-white border-0 rounded text-base transition-colors duration-300 ease-in-out
+        ${
+          isGenerating
+            ? "bg-gray-400 cursor-not-allowed"
+            : "bg-red-500 hover:bg-red-600"
+        }`}
           >
             Видалити всі фото
           </button>
         </div>
       )}
-      <PdfPreview photos={photos} title={title} />
+      <ReportPreview
+        photos={photos}
+        title={title}
+        pageWidth={LAYOUT_HORIZONTAL.PAGE_WIDTH}
+        pageHeight={LAYOUT_HORIZONTAL.PAGE_HEIGHT}
+        padding={LAYOUT_HORIZONTAL.PADDING}
+        gap={LAYOUT_HORIZONTAL.GRID_GAP}
+        columns={2}
+        rows={4}
+        ratioHPerW={481 / 854} // як у твоїх розрахунках для горизонтального
+        photosPerPage={LAYOUT_HORIZONTAL.PHOTOS_PER_PAGE}
+        titleBlockExtraPx={180} // як було у формулі (- 180px)
+        titleMarginTopPx={20} // mt-20 для горизонтальної
+        captionHeightPx={25}
+        captionGapPx={5}
+      />
     </div>
   );
 }
