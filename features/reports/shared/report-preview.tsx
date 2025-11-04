@@ -8,29 +8,16 @@ type Padding = { left: number; right: number; top: number; bottom: number };
 type Props = {
   photos: Photo[];
   title: string;
-  // Базові параметри сторінки
   pageWidth: number;
   pageHeight: number;
   padding: Padding;
   gap: number;
-
-  // Параметри ґрід-розкладки
   columns: number;
   rows: number;
-
-  // Співвідношення висоти до ширини для фото (height = width * ratioHPerW)
   ratioHPerW: number;
-
-  // Скільки фото на сторінку
   photosPerPage: number;
-
-  // Додаткові відступи для заголовка (різні у вертикального/горизонтального)
   titleBlockExtraPx: number;
-
-  // Відступ зверху для заголовка (Tailwind mt-N уже є, але тут — точний px)
   titleMarginTopPx: number;
-
-  // Параметри підпису
   captionHeightPx: number;
   captionGapPx: number;
 };
@@ -89,15 +76,9 @@ export function ReportPreview({
         >
           {/* Заголовок */}
           <div
-            className="text-4xl font-bold text-black text-left"
+            className="text-3xl! font-bold text-black text-left mb-2.5"
             style={{
               marginTop: `${titleMarginTopPx}px`,
-              fontSize: "16px",
-              fontWeight: "bold",
-              color: "#000",
-              textAlign: "left",
-              marginBottom: "10px",
-              paddingLeft: "24px",
             }}
           >
             {title || "Об'єкт оцінки"}
@@ -131,9 +112,9 @@ export function ReportPreview({
                 }}
               >
                 <div
-                  className="text-xs leading-[1.2] text-[#1a2a44]
-                           bg-[rgba(255,255,255,0.8)] py-0.5 px-1 max-w-full
-                           whitespace-normal wrap-break-word mb-1"
+                  className="text-lg! leading-[1.2] text-[#1a2a44]
+                           bg-[rgba(255,255,255,0.8)] pb-0.5 px-1 max-w-full
+                           whitespace-normal wrap-break-word mb-2"
                 >
                   {photo.caption ||
                     `Фотографія №${i + 1 + pageIndex * photosPerPage}`}
