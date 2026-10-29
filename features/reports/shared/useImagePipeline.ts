@@ -11,7 +11,7 @@ interface Args {
   setImportProgress: (v: number | null) => void;
   currentCount: number;
   maxCount?: number;
-  standardizeImage: (f: File) => Promise<File>;
+  standardizeImage: (f: File) => Promise<{ file: File; width: number; height: number }>;
 }
 
 export function useImagePipeline({
@@ -70,12 +70,14 @@ export function useImagePipeline({
             },
           });
 
-          const standardizedFile = await standardizeImage(compressedFile);
+          const { file: standardizedFile, width, height } = await standardizeImage(compressedFile);
           const previewUrl = register(URL.createObjectURL(standardizedFile));
 
           patchPhoto(placeholderId, {
             file: standardizedFile,
             preview: previewUrl,
+            width,
+            height,
             status: "ready",
             progress: 100,
           });

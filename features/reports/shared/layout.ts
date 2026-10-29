@@ -37,3 +37,13 @@ export const LAYOUT_HORIZONTAL = {
   CAPTION_HEIGHT: 25,
   CAPTION_GAP: 5,
 } as const;
+
+export const LAYOUT_MIXED = {
+  NAME: "mixed",
+  PHOTOS_PER_PAGE: 6,
+  PDF_IMG: { width: 440, height: 625 },
+  PAGE_WIDTH: 1131,
+  PAGE_HEIGHT: 1600,
+  PADDING: { top: 60, right: 45, bottom: 45, left: 45 },
+  GRID_GAP: 22,
+} as const;
