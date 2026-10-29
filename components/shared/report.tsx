@@ -13,6 +13,8 @@ import {
   SortablePhoto,
   ReportPreview,
 } from "@/features/reports/shared";
+import { LAYOUT_HORIZONTAL, LAYOUT_VERTICAL, LAYOUT_MIXED } from "@/features/reports/shared/layout";
+import { MixedReportPreview } from "@/features/reports/shared/mixed-report-preview";
 import { useObjectUrlRegistry } from "@/hooks/useObjectUrlRegistry";
 
 import {
@@ -25,33 +27,7 @@ import {
 import { SortableContext, arrayMove } from "@dnd-kit/sortable";
 import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 
-interface LayoutConfig {
-  NAME: string;
-  PHOTOS_PER_PAGE: number;
-  PAGE_WIDTH: number;
-  PAGE_HEIGHT: number;
-  PADDING: {
-    top: number;
-    right: number;
-    bottom: number;
-    left: number;
-  };
-  GRID_GAP: number;
-  PDF_IMG: {
-    width: number;
-    height: number;
-  };
-  TARGET_WIDTH: number;
-  TARGET_HEIGHT: number;
-  COLUMNS: number;
-  ROWS: number;
-  RATIOHPERW1: number;
-  RATIOHPERW2: number;
-  TITLE_BLOCK: number;
-  TITLE_MARGIN: number;
-  CAPTION_HEIGHT: number;
-  CAPTION_GAP: number;
-}
+type LayoutConfig = typeof LAYOUT_HORIZONTAL | typeof LAYOUT_VERTICAL | typeof LAYOUT_MIXED;
 
 interface PhotoReportProps {
   layoutConfig: LayoutConfig;
@@ -70,7 +46,7 @@ export function PhotoReport({ layoutConfig }: PhotoReportProps) {
 
   const updateTitle = (newTitle: string) => setTitle(newTitle);
 
-  const standardizeImage = async (file: File): Promise<File> => {
+  const standardizeImage = async (file: File): Promise<{ file: File; width: number; height: number }> => {
     const tempUrl = URL.createObjectURL(file);
     try {
       const img = new Image();
@@ -80,6 +56,10 @@ export function PhotoReport({ layoutConfig }: PhotoReportProps) {
         img.onerror = reject;
         img.src = tempUrl;
       });
+
+      if (layoutConfig.NAME === "mixed") {
+        return { file, width: img.width, height: img.height };
+      }
 
       const targetWidth = layoutConfig.TARGET_WIDTH;
       const targetHeight = layoutConfig.TARGET_HEIGHT;
@@ -112,7 +92,7 @@ export function PhotoReport({ layoutConfig }: PhotoReportProps) {
         canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.9)
       );
 
-      return new File([blob], file.name, { type: "image/jpeg" });
+      return { file: new File([blob], file.name, { type: "image/jpeg" }), width: targetWidth, height: targetHeight };
     } finally {
       URL.revokeObjectURL(tempUrl);
     }
@@ -373,7 +353,9 @@ export function PhotoReport({ layoutConfig }: PhotoReportProps) {
           </button>
         </div>
       )}
-      <ReportPreview
+      {layoutConfig.NAME === "mixed" ? (
+        <MixedReportPreview photos={photos} title={title} layout={layoutConfig} />
+      ) : <ReportPreview
         photos={photos}
         title={title}
         pageWidth={layoutConfig.PAGE_WIDTH}
@@ -388,7 +370,7 @@ export function PhotoReport({ layoutConfig }: PhotoReportProps) {
         titleMarginTopPx={layoutConfig.TITLE_MARGIN} // mt-20 для горизонтальної
         captionHeightPx={layoutConfig.CAPTION_HEIGHT}
         captionGapPx={layoutConfig.CAPTION_GAP}
-      />
+      />}
     </div>
   );
 }

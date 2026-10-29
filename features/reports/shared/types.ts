@@ -4,6 +4,8 @@ export interface Photo {
   preview: string;
   caption: string;
   rotation: number;
+  width?: number;
+  height?: number;
 
   status?: "processing" | "ready" | "error";
   progress?: number;

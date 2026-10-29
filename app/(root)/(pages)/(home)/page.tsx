@@ -17,6 +17,11 @@ const tools = [
     title: "Створення вертикального фотозвіту у PDF",
     link: "/sort-photo-vertical",
   },
+  {
+    id: 3,
+    title: "Створення змішаного фотозвіту у PDF (6 фото на сторінці)",
+    link: "/sort-photo-mixed",
+  },
 ];
 
 export default function Home() {
